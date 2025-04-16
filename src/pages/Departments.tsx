@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { EntityManager } from "@/components/EntityManager";
 import { Button } from "@/components/ui/button";
@@ -10,32 +10,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Pencil, Trash } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { supabase } from "@/lib/supabase";
+import { Tables } from "@/lib/supabase";
 
-interface Department {
-  id: number;
-  name: string;
-  location: string;
-  manager: string;
-  employeeCount: number;
-}
-
-// Sample data
-const initialDepartments: Department[] = [
-  { id: 1, name: "Production", location: "Building A", manager: "John Smith", employeeCount: 45 },
-  { id: 2, name: "R&D", location: "Building B", manager: "Jane Doe", employeeCount: 18 },
-  { id: 3, name: "Quality Assurance", location: "Building A", manager: "Michael Brown", employeeCount: 12 },
-  { id: 4, name: "Logistics", location: "Building C", manager: "Sarah Johnson", employeeCount: 20 },
-  { id: 5, name: "Administration", location: "Main Building", manager: "Robert Davis", employeeCount: 15 },
-];
+type Department = Tables["departments"];
 
 const Departments = () => {
-  const [departments, setDepartments] = useState<Department[]>(initialDepartments);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -52,6 +39,50 @@ const Departments = () => {
     { key: "manager", label: "Manager" },
     { key: "employeeCount", label: "Employees" },
   ];
+
+  // Fetch departments from Supabase
+  const fetchDepartments = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        setDepartments(data);
+      }
+    } catch (error) {
+      console.error('Error fetching departments:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch departments",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDepartments();
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel('departments-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'departments' }, () => {
+        fetchDepartments();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const handleAddNew = () => {
     setFormData({ name: "", location: "", manager: "" });
@@ -78,59 +109,103 @@ const Departments = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleAddSubmit = () => {
-    const newDepartment: Department = {
-      id: departments.length > 0 ? Math.max(...departments.map(d => d.id)) + 1 : 1,
-      name: formData.name,
-      location: formData.location,
-      manager: formData.manager,
-      employeeCount: 0,
-    };
-    
-    setDepartments([...departments, newDepartment]);
-    setIsAddDialogOpen(false);
-    toast({
-      title: "Department Added",
-      description: `${newDepartment.name} has been added successfully.`,
-    });
+  const handleAddSubmit = async () => {
+    try {
+      const newDepartment = {
+        name: formData.name,
+        location: formData.location,
+        manager: formData.manager,
+        employeeCount: 0,
+      };
+      
+      const { data, error } = await supabase
+        .from('departments')
+        .insert([newDepartment])
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      setIsAddDialogOpen(false);
+      toast({
+        title: "Department Added",
+        description: `${formData.name} has been added successfully.`,
+      });
+      fetchDepartments();
+    } catch (error) {
+      console.error('Error adding department:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add department",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleEditSubmit = () => {
+  const handleEditSubmit = async () => {
     if (!currentDepartment) return;
     
-    const updatedDepartments = departments.map(dep => 
-      dep.id === currentDepartment.id 
-        ? { 
-            ...dep, 
-            name: formData.name, 
-            location: formData.location, 
-            manager: formData.manager 
-          } 
-        : dep
-    );
-    
-    setDepartments(updatedDepartments);
-    setIsEditDialogOpen(false);
-    toast({
-      title: "Department Updated",
-      description: `${formData.name} has been updated successfully.`,
-    });
+    try {
+      const updatedDepartment = {
+        name: formData.name,
+        location: formData.location,
+        manager: formData.manager,
+      };
+      
+      const { error } = await supabase
+        .from('departments')
+        .update(updatedDepartment)
+        .eq('id', currentDepartment.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setIsEditDialogOpen(false);
+      toast({
+        title: "Department Updated",
+        description: `${formData.name} has been updated successfully.`,
+      });
+      fetchDepartments();
+    } catch (error) {
+      console.error('Error updating department:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update department",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleDeleteSubmit = () => {
+  const handleDeleteSubmit = async () => {
     if (!currentDepartment) return;
     
-    const filteredDepartments = departments.filter(
-      (dep) => dep.id !== currentDepartment.id
-    );
-    
-    setDepartments(filteredDepartments);
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: "Department Deleted",
-      description: `${currentDepartment.name} has been deleted successfully.`,
-      variant: "destructive",
-    });
+    try {
+      const { error } = await supabase
+        .from('departments')
+        .delete()
+        .eq('id', currentDepartment.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setIsDeleteDialogOpen(false);
+      toast({
+        title: "Department Deleted",
+        description: `${currentDepartment.name} has been deleted successfully.`,
+        variant: "destructive",
+      });
+      fetchDepartments();
+    } catch (error) {
+      console.error('Error deleting department:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete department",
+        variant: "destructive",
+      });
+    }
   };
 
   const renderActions = (department: Department) => (
@@ -164,6 +239,7 @@ const Departments = () => {
           onEdit={handleEdit}
           onDelete={handleDelete}
           renderActions={renderActions}
+          isLoading={isLoading}
         />
 
         {/* Add Department Dialog */}

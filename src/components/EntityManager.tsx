@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { PlusCircle, Search } from "lucide-react";
+import { PlusCircle, Search, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -27,6 +27,7 @@ export interface EntityManagerProps {
   onEdit: (item: any) => void;
   onDelete: (item: any) => void;
   renderActions?: (item: any) => React.ReactNode;
+  isLoading?: boolean;
 }
 
 export function EntityManager({
@@ -37,7 +38,8 @@ export function EntityManager({
   onAdd,
   onEdit,
   onDelete,
-  renderActions
+  renderActions,
+  isLoading = false
 }: EntityManagerProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -84,7 +86,16 @@ export function EntityManager({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredData.length === 0 ? (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={columns.length + 1} className="h-24 text-center">
+                    <div className="flex justify-center items-center">
+                      <Loader2 className="h-6 w-6 animate-spin mr-2" /> 
+                      Loading...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : filteredData.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={columns.length + 1} className="h-24 text-center">
                     No results found.
