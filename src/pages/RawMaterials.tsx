@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { EntityManager } from "@/components/EntityManager";
 import { Button } from "@/components/ui/button";
@@ -16,29 +16,25 @@ import { Label } from "@/components/ui/label";
 import { Pencil, Trash } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
 
-interface RawMaterial {
+type RawMaterial = {
   id: number;
   name: string;
   code: string;
   category: string;
   supplier: string;
   stockQuantity: number;
+  stock_quantity: number;
   unitCost: string;
+  unit_cost: string;
   description: string;
-}
-
-// Sample data
-const initialMaterials: RawMaterial[] = [
-  { id: 1, name: "Stainless Steel", code: "MAT-SS-001", category: "Metal", supplier: "Steel Industries Inc.", stockQuantity: 5000, unitCost: "$12.50/kg", description: "High-grade stainless steel for industrial applications" },
-  { id: 2, name: "Copper Wire", code: "MAT-CW-002", category: "Electrical", supplier: "ElectroCom Suppliers", stockQuantity: 2500, unitCost: "$8.75/m", description: "Heavy-duty copper wiring for electrical systems" },
-  { id: 3, name: "Nylon Polymer", code: "MAT-NP-003", category: "Polymer", supplier: "PolyTech Solutions", stockQuantity: 1800, unitCost: "$6.20/kg", description: "Durable nylon polymer for various manufacturing applications" },
-  { id: 4, name: "Silicon Wafer", code: "MAT-SW-004", category: "Electronics", supplier: "TechWare Components", stockQuantity: 500, unitCost: "$45.00/unit", description: "High-purity silicon wafers for electronic components" },
-  { id: 5, name: "Aluminum Sheets", code: "MAT-AS-005", category: "Metal", supplier: "MetalWorks Co.", stockQuantity: 750, unitCost: "$18.30/m²", description: "Lightweight aluminum sheets for structural components" },
-];
+  created_at?: string;
+};
 
 const RawMaterials = () => {
-  const [materials, setMaterials] = useState<RawMaterial[]>(initialMaterials);
+  const [materials, setMaterials] = useState<RawMaterial[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -61,6 +57,64 @@ const RawMaterials = () => {
     { key: "stockQuantity", label: "Stock Qty" },
     { key: "unitCost", label: "Unit Cost" },
   ];
+
+  // Fetch raw materials from Supabase
+  const fetchMaterials = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('raw_materials')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        // Convert snake_case database fields to camelCase for the component
+        const formattedMaterials = data.map(mat => ({
+          id: mat.id,
+          name: mat.name,
+          code: mat.code,
+          category: mat.category,
+          supplier: mat.supplier,
+          stockQuantity: mat.stock_quantity,
+          stock_quantity: mat.stock_quantity,
+          unitCost: mat.unit_cost,
+          unit_cost: mat.unit_cost,
+          description: mat.description,
+          created_at: mat.created_at
+        }));
+        setMaterials(formattedMaterials);
+      }
+    } catch (error) {
+      console.error('Error fetching materials:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch raw materials",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMaterials();
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel('materials-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'raw_materials' }, () => {
+        fetchMaterials();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const handleAddNew = () => {
     setFormData({
@@ -101,66 +155,110 @@ const RawMaterials = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleAddSubmit = () => {
-    const newMaterial: RawMaterial = {
-      id: materials.length > 0 ? Math.max(...materials.map(m => m.id)) + 1 : 1,
-      name: formData.name,
-      code: formData.code,
-      category: formData.category,
-      supplier: formData.supplier,
-      stockQuantity: parseInt(formData.stockQuantity) || 0,
-      unitCost: `$${formData.unitCost}`,
-      description: formData.description,
-    };
-    
-    setMaterials([...materials, newMaterial]);
-    setIsAddDialogOpen(false);
-    toast({
-      title: "Raw Material Added",
-      description: `${newMaterial.name} has been added successfully.`,
-    });
+  const handleAddSubmit = async () => {
+    try {
+      const newMaterial = {
+        name: formData.name,
+        code: formData.code,
+        category: formData.category,
+        supplier: formData.supplier,
+        stock_quantity: parseInt(formData.stockQuantity) || 0,
+        unit_cost: `$${formData.unitCost}`,
+        description: formData.description,
+      };
+      
+      const { data, error } = await supabase
+        .from('raw_materials')
+        .insert([newMaterial])
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      setIsAddDialogOpen(false);
+      toast({
+        title: "Raw Material Added",
+        description: `${formData.name} has been added successfully.`,
+      });
+      fetchMaterials();
+    } catch (error) {
+      console.error('Error adding raw material:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add raw material",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleEditSubmit = () => {
+  const handleEditSubmit = async () => {
     if (!currentMaterial) return;
     
-    const updatedMaterials = materials.map(mat => 
-      mat.id === currentMaterial.id 
-        ? { 
-            ...mat, 
-            name: formData.name,
-            code: formData.code,
-            category: formData.category,
-            supplier: formData.supplier,
-            stockQuantity: parseInt(formData.stockQuantity) || 0,
-            unitCost: `$${formData.unitCost}`,
-            description: formData.description,
-          } 
-        : mat
-    );
-    
-    setMaterials(updatedMaterials);
-    setIsEditDialogOpen(false);
-    toast({
-      title: "Raw Material Updated",
-      description: `${formData.name} has been updated successfully.`,
-    });
+    try {
+      const updatedMaterial = {
+        name: formData.name,
+        code: formData.code,
+        category: formData.category,
+        supplier: formData.supplier,
+        stock_quantity: parseInt(formData.stockQuantity) || 0,
+        unit_cost: `$${formData.unitCost}`,
+        description: formData.description,
+      };
+      
+      const { error } = await supabase
+        .from('raw_materials')
+        .update(updatedMaterial)
+        .eq('id', currentMaterial.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setIsEditDialogOpen(false);
+      toast({
+        title: "Raw Material Updated",
+        description: `${formData.name} has been updated successfully.`,
+      });
+      fetchMaterials();
+    } catch (error) {
+      console.error('Error updating raw material:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update raw material",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleDeleteSubmit = () => {
+  const handleDeleteSubmit = async () => {
     if (!currentMaterial) return;
     
-    const filteredMaterials = materials.filter(
-      (mat) => mat.id !== currentMaterial.id
-    );
-    
-    setMaterials(filteredMaterials);
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: "Raw Material Deleted",
-      description: `${currentMaterial.name} has been deleted successfully.`,
-      variant: "destructive",
-    });
+    try {
+      const { error } = await supabase
+        .from('raw_materials')
+        .delete()
+        .eq('id', currentMaterial.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setIsDeleteDialogOpen(false);
+      toast({
+        title: "Raw Material Deleted",
+        description: `${currentMaterial.name} has been deleted successfully.`,
+        variant: "destructive",
+      });
+      fetchMaterials();
+    } catch (error) {
+      console.error('Error deleting raw material:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete raw material",
+        variant: "destructive",
+      });
+    }
   };
 
   const renderActions = (material: RawMaterial) => (
@@ -194,6 +292,7 @@ const RawMaterials = () => {
           onEdit={handleEdit}
           onDelete={handleDelete}
           renderActions={renderActions}
+          isLoading={isLoading}
         />
 
         {/* Add Raw Material Dialog */}

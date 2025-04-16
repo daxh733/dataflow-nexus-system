@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { EntityManager } from "@/components/EntityManager";
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,11 @@ import {
   SelectTrigger,
   SelectValue, 
 } from "@/components/ui/select";
+import { supabase } from "@/integrations/supabase/client";
 
-interface Employee {
+// Define a type that matches our component's expected structure 
+// (with camelCase property names)
+type Employee = {
   id: number;
   name: string;
   position: string;
@@ -31,32 +34,17 @@ interface Employee {
   email: string;
   phone: string;
   joinDate: string;
-}
-
-// Sample data
-const initialEmployees: Employee[] = [
-  { id: 1, name: "John Smith", position: "Senior Engineer", department: "Production", email: "john@example.com", phone: "555-1234", joinDate: "2020-05-15" },
-  { id: 2, name: "Jane Doe", position: "Design Lead", department: "R&D", email: "jane@example.com", phone: "555-2345", joinDate: "2019-07-22" },
-  { id: 3, name: "Michael Brown", position: "QA Specialist", department: "Quality Assurance", email: "michael@example.com", phone: "555-3456", joinDate: "2021-02-10" },
-  { id: 4, name: "Sarah Johnson", position: "Logistics Manager", department: "Logistics", email: "sarah@example.com", phone: "555-4567", joinDate: "2018-11-05" },
-  { id: 5, name: "Robert Davis", position: "HR Director", department: "Administration", email: "robert@example.com", phone: "555-5678", joinDate: "2017-09-18" },
-];
-
-// Sample departments for the dropdown
-const departments = [
-  "Production",
-  "R&D",
-  "Quality Assurance",
-  "Logistics",
-  "Administration",
-];
+  created_at?: string;
+};
 
 const Employees = () => {
-  const [employees, setEmployees] = useState<Employee[]>(initialEmployees);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [currentEmployee, setCurrentEmployee] = useState<Employee | null>(null);
+  const [departments, setDepartments] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     name: "",
     position: "",
@@ -74,6 +62,83 @@ const Employees = () => {
     { key: "phone", label: "Phone" },
     { key: "joinDate", label: "Join Date" },
   ];
+
+  // Fetch employees from Supabase
+  const fetchEmployees = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        // Convert database field names to component's expected format (join_date → joinDate)
+        const formattedEmployees = data.map(emp => ({
+          id: emp.id,
+          name: emp.name,
+          position: emp.position,
+          department: emp.department,
+          email: emp.email,
+          phone: emp.phone,
+          joinDate: emp.join_date,
+          created_at: emp.created_at
+        }));
+        setEmployees(formattedEmployees);
+      }
+    } catch (error) {
+      console.error('Error fetching employees:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch employees",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch departments for dropdown
+  const fetchDepartments = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('name');
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        // Extract department names
+        const departmentNames = data.map(dept => dept.name);
+        setDepartments(departmentNames);
+      }
+    } catch (error) {
+      console.error('Error fetching departments:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+    fetchDepartments();
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel('employees-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
+        fetchEmployees();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const handleAddNew = () => {
     setFormData({ name: "", position: "", department: "", email: "", phone: "", joinDate: "" });
@@ -107,64 +172,108 @@ const Employees = () => {
     setFormData((prev) => ({ ...prev, department: value }));
   };
 
-  const handleAddSubmit = () => {
-    const newEmployee: Employee = {
-      id: employees.length > 0 ? Math.max(...employees.map(e => e.id)) + 1 : 1,
-      name: formData.name,
-      position: formData.position,
-      department: formData.department,
-      email: formData.email,
-      phone: formData.phone,
-      joinDate: formData.joinDate,
-    };
-    
-    setEmployees([...employees, newEmployee]);
-    setIsAddDialogOpen(false);
-    toast({
-      title: "Employee Added",
-      description: `${newEmployee.name} has been added successfully.`,
-    });
+  const handleAddSubmit = async () => {
+    try {
+      const newEmployee = {
+        name: formData.name,
+        position: formData.position,
+        department: formData.department,
+        email: formData.email,
+        phone: formData.phone,
+        join_date: formData.joinDate,
+      };
+      
+      const { data, error } = await supabase
+        .from('employees')
+        .insert([newEmployee])
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      setIsAddDialogOpen(false);
+      toast({
+        title: "Employee Added",
+        description: `${formData.name} has been added successfully.`,
+      });
+      fetchEmployees();
+    } catch (error) {
+      console.error('Error adding employee:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add employee",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleEditSubmit = () => {
+  const handleEditSubmit = async () => {
     if (!currentEmployee) return;
     
-    const updatedEmployees = employees.map(emp => 
-      emp.id === currentEmployee.id 
-        ? { 
-            ...emp, 
-            name: formData.name,
-            position: formData.position,
-            department: formData.department,
-            email: formData.email,
-            phone: formData.phone,
-            joinDate: formData.joinDate,
-          } 
-        : emp
-    );
-    
-    setEmployees(updatedEmployees);
-    setIsEditDialogOpen(false);
-    toast({
-      title: "Employee Updated",
-      description: `${formData.name} has been updated successfully.`,
-    });
+    try {
+      const updatedEmployee = {
+        name: formData.name,
+        position: formData.position,
+        department: formData.department,
+        email: formData.email,
+        phone: formData.phone,
+        join_date: formData.joinDate,
+      };
+      
+      const { error } = await supabase
+        .from('employees')
+        .update(updatedEmployee)
+        .eq('id', currentEmployee.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setIsEditDialogOpen(false);
+      toast({
+        title: "Employee Updated",
+        description: `${formData.name} has been updated successfully.`,
+      });
+      fetchEmployees();
+    } catch (error) {
+      console.error('Error updating employee:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update employee",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleDeleteSubmit = () => {
+  const handleDeleteSubmit = async () => {
     if (!currentEmployee) return;
     
-    const filteredEmployees = employees.filter(
-      (emp) => emp.id !== currentEmployee.id
-    );
-    
-    setEmployees(filteredEmployees);
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: "Employee Deleted",
-      description: `${currentEmployee.name} has been deleted successfully.`,
-      variant: "destructive",
-    });
+    try {
+      const { error } = await supabase
+        .from('employees')
+        .delete()
+        .eq('id', currentEmployee.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setIsDeleteDialogOpen(false);
+      toast({
+        title: "Employee Deleted",
+        description: `${currentEmployee.name} has been deleted successfully.`,
+        variant: "destructive",
+      });
+      fetchEmployees();
+    } catch (error) {
+      console.error('Error deleting employee:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete employee",
+        variant: "destructive",
+      });
+    }
   };
 
   const renderActions = (employee: Employee) => (
@@ -198,6 +307,7 @@ const Employees = () => {
           onEdit={handleEdit}
           onDelete={handleDelete}
           renderActions={renderActions}
+          isLoading={isLoading}
         />
 
         {/* Add Employee Dialog */}

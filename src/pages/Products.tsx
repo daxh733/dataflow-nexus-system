@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { EntityManager } from "@/components/EntityManager";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,9 @@ import { Label } from "@/components/ui/label";
 import { Pencil, Trash } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
 
-interface Product {
+type Product = {
   id: number;
   name: string;
   sku: string;
@@ -25,19 +26,12 @@ interface Product {
   price: string;
   stock: number;
   description: string;
-}
-
-// Sample data
-const initialProducts: Product[] = [
-  { id: 1, name: "Industrial Valve X200", sku: "VAL-X200", category: "Valves", price: "$345.99", stock: 120, description: "Heavy-duty industrial valve with corrosion resistance" },
-  { id: 2, name: "Electric Motor M500", sku: "MOT-M500", category: "Motors", price: "$789.50", stock: 45, description: "High-efficiency electric motor for industrial applications" },
-  { id: 3, name: "Control Panel CP100", sku: "CP-100", category: "Control Systems", price: "$1,200.00", stock: 15, description: "Advanced control panel with touchscreen interface" },
-  { id: 4, name: "Hydraulic Pump HP50", sku: "PUMP-HP50", category: "Hydraulics", price: "$560.75", stock: 32, description: "Precision hydraulic pump for high-pressure systems" },
-  { id: 5, name: "Steel Pipe S100", sku: "PIPE-S100", category: "Piping", price: "$125.00", stock: 200, description: "Industrial grade steel pipe with heat resistance" },
-];
+  created_at?: string;
+};
 
 const Products = () => {
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -58,6 +52,50 @@ const Products = () => {
     { key: "price", label: "Price" },
     { key: "stock", label: "Stock" },
   ];
+
+  // Fetch products from Supabase
+  const fetchProducts = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        setProducts(data);
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch products",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel('products-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        fetchProducts();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const handleAddNew = () => {
     setFormData({ name: "", sku: "", category: "", price: "", stock: "", description: "" });
@@ -89,64 +127,108 @@ const Products = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleAddSubmit = () => {
-    const newProduct: Product = {
-      id: products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1,
-      name: formData.name,
-      sku: formData.sku,
-      category: formData.category,
-      price: `$${formData.price}`,
-      stock: parseInt(formData.stock) || 0,
-      description: formData.description,
-    };
-    
-    setProducts([...products, newProduct]);
-    setIsAddDialogOpen(false);
-    toast({
-      title: "Product Added",
-      description: `${newProduct.name} has been added successfully.`,
-    });
+  const handleAddSubmit = async () => {
+    try {
+      const newProduct = {
+        name: formData.name,
+        sku: formData.sku,
+        category: formData.category,
+        price: `$${formData.price}`,
+        stock: parseInt(formData.stock) || 0,
+        description: formData.description,
+      };
+      
+      const { data, error } = await supabase
+        .from('products')
+        .insert([newProduct])
+        .select();
+
+      if (error) {
+        throw error;
+      }
+
+      setIsAddDialogOpen(false);
+      toast({
+        title: "Product Added",
+        description: `${formData.name} has been added successfully.`,
+      });
+      fetchProducts();
+    } catch (error) {
+      console.error('Error adding product:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add product",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleEditSubmit = () => {
+  const handleEditSubmit = async () => {
     if (!currentProduct) return;
     
-    const updatedProducts = products.map(prod => 
-      prod.id === currentProduct.id 
-        ? { 
-            ...prod, 
-            name: formData.name,
-            sku: formData.sku,
-            category: formData.category,
-            price: `$${formData.price}`,
-            stock: parseInt(formData.stock) || 0,
-            description: formData.description,
-          } 
-        : prod
-    );
-    
-    setProducts(updatedProducts);
-    setIsEditDialogOpen(false);
-    toast({
-      title: "Product Updated",
-      description: `${formData.name} has been updated successfully.`,
-    });
+    try {
+      const updatedProduct = {
+        name: formData.name,
+        sku: formData.sku,
+        category: formData.category,
+        price: `$${formData.price}`,
+        stock: parseInt(formData.stock) || 0,
+        description: formData.description,
+      };
+      
+      const { error } = await supabase
+        .from('products')
+        .update(updatedProduct)
+        .eq('id', currentProduct.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setIsEditDialogOpen(false);
+      toast({
+        title: "Product Updated",
+        description: `${formData.name} has been updated successfully.`,
+      });
+      fetchProducts();
+    } catch (error) {
+      console.error('Error updating product:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update product",
+        variant: "destructive",
+      });
+    }
   };
 
-  const handleDeleteSubmit = () => {
+  const handleDeleteSubmit = async () => {
     if (!currentProduct) return;
     
-    const filteredProducts = products.filter(
-      (prod) => prod.id !== currentProduct.id
-    );
-    
-    setProducts(filteredProducts);
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: "Product Deleted",
-      description: `${currentProduct.name} has been deleted successfully.`,
-      variant: "destructive",
-    });
+    try {
+      const { error } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', currentProduct.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setIsDeleteDialogOpen(false);
+      toast({
+        title: "Product Deleted",
+        description: `${currentProduct.name} has been deleted successfully.`,
+        variant: "destructive",
+      });
+      fetchProducts();
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete product",
+        variant: "destructive",
+      });
+    }
   };
 
   const renderActions = (product: Product) => (
@@ -180,6 +262,7 @@ const Products = () => {
           onEdit={handleEdit}
           onDelete={handleDelete}
           renderActions={renderActions}
+          isLoading={isLoading}
         />
 
         {/* Add Product Dialog */}
