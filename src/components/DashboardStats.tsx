@@ -40,6 +40,13 @@ export function DashboardStats() {
           supabase.from('defects').select('*', { count: 'exact', head: true })
         ]);
 
+        console.log('Dashboard stats fetched:', {
+          departments: departmentsResult.count,
+          employees: employeesResult.count,
+          products: productsResult.count,
+          materials: materialsResult.count,
+        });
+
         setCounts({
           departments: departmentsResult.count?.toString() || "0",
           employees: employeesResult.count?.toString() || "0",
