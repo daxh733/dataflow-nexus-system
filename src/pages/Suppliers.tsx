@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { EntityManager } from "@/components/EntityManager";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,8 @@ import { Label } from "@/components/ui/label";
 import { Pencil, Trash } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface Supplier {
   id: number;
@@ -26,19 +28,11 @@ interface Supplier {
   address: string;
   materials: string;
   status: string;
+  created_at?: string;
 }
 
-// Sample data
-const initialSuppliers: Supplier[] = [
-  { id: 1, name: "Steel Industries Inc.", contact: "Robert Steel", email: "rsteel@steelindustries.com", phone: "555-1234", address: "123 Industrial Blvd, Pittsburgh", materials: "Stainless Steel, Carbon Steel", status: "Active" },
-  { id: 2, name: "ElectroCom Suppliers", contact: "Sarah Wires", email: "swires@electrocom.com", phone: "555-2345", address: "456 Electronics Way, San Jose", materials: "Copper Wire, Circuit Components", status: "Active" },
-  { id: 3, name: "PolyTech Solutions", contact: "James Polymer", email: "jpolymer@polytech.com", phone: "555-3456", address: "789 Polymer St, Chicago", materials: "Nylon Polymer, Plastics", status: "Inactive" },
-  { id: 4, name: "TechWare Components", contact: "Lisa Circuit", email: "lcircuit@techware.com", phone: "555-4567", address: "101 Tech Drive, Austin", materials: "Silicon Wafers, Microchips", status: "Active" },
-  { id: 5, name: "MetalWorks Co.", contact: "Michael Smith", email: "msmith@metalworks.com", phone: "555-5678", address: "202 Alloy Road, Detroit", materials: "Aluminum, Brass, Titanium", status: "Active" },
-];
-
 const Suppliers = () => {
-  const [suppliers, setSuppliers] = useState<Supplier[]>(initialSuppliers);
+  const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -61,6 +55,137 @@ const Suppliers = () => {
     { key: "materials", label: "Materials Supplied" },
     { key: "status", label: "Status" },
   ];
+
+  // Fetch suppliers
+  const { data: suppliers = [], isLoading } = useQuery({
+    queryKey: ['suppliers'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .order('name');
+      
+      if (error) {
+        console.error('Error fetching suppliers:', error);
+        toast({
+          title: "Error fetching suppliers",
+          description: error.message,
+          variant: "destructive",
+        });
+        return [];
+      }
+      
+      return data as Supplier[];
+    },
+  });
+
+  // Add supplier mutation
+  const addSupplierMutation = useMutation({
+    mutationFn: async (newSupplier: Omit<Supplier, 'id' | 'created_at'>) => {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .insert(newSupplier)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      setIsAddDialogOpen(false);
+      toast({
+        title: "Supplier Added",
+        description: `${formData.name} has been added successfully.`,
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error adding supplier:', error);
+      toast({
+        title: "Error adding supplier",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update supplier mutation
+  const updateSupplierMutation = useMutation({
+    mutationFn: async (supplier: Partial<Supplier>) => {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .update(supplier)
+        .eq('id', currentSupplier?.id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      setIsEditDialogOpen(false);
+      toast({
+        title: "Supplier Updated",
+        description: `${formData.name} has been updated successfully.`,
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error updating supplier:', error);
+      toast({
+        title: "Error updating supplier",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete supplier mutation
+  const deleteSupplierMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await supabase
+        .from('suppliers')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      setIsDeleteDialogOpen(false);
+      toast({
+        title: "Supplier Deleted",
+        description: `${currentSupplier?.name} has been deleted successfully.`,
+        variant: "destructive",
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error deleting supplier:', error);
+      toast({
+        title: "Error deleting supplier",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Set up real-time listener
+  useEffect(() => {
+    const channel = supabase
+      .channel('suppliers-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'suppliers' }, 
+        (payload) => {
+          console.log('Real-time update:', payload);
+          queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
 
   const handleAddNew = () => {
     setFormData({
@@ -106,65 +231,17 @@ const Suppliers = () => {
   };
 
   const handleAddSubmit = () => {
-    const newSupplier: Supplier = {
-      id: suppliers.length > 0 ? Math.max(...suppliers.map(s => s.id)) + 1 : 1,
-      name: formData.name,
-      contact: formData.contact,
-      email: formData.email,
-      phone: formData.phone,
-      address: formData.address,
-      materials: formData.materials,
-      status: formData.status,
-    };
-    
-    setSuppliers([...suppliers, newSupplier]);
-    setIsAddDialogOpen(false);
-    toast({
-      title: "Supplier Added",
-      description: `${newSupplier.name} has been added successfully.`,
-    });
+    addSupplierMutation.mutate(formData);
   };
 
   const handleEditSubmit = () => {
     if (!currentSupplier) return;
-    
-    const updatedSuppliers = suppliers.map(supp => 
-      supp.id === currentSupplier.id 
-        ? { 
-            ...supp, 
-            name: formData.name,
-            contact: formData.contact,
-            email: formData.email,
-            phone: formData.phone,
-            address: formData.address,
-            materials: formData.materials,
-            status: formData.status,
-          } 
-        : supp
-    );
-    
-    setSuppliers(updatedSuppliers);
-    setIsEditDialogOpen(false);
-    toast({
-      title: "Supplier Updated",
-      description: `${formData.name} has been updated successfully.`,
-    });
+    updateSupplierMutation.mutate(formData);
   };
 
   const handleDeleteSubmit = () => {
     if (!currentSupplier) return;
-    
-    const filteredSuppliers = suppliers.filter(
-      (supp) => supp.id !== currentSupplier.id
-    );
-    
-    setSuppliers(filteredSuppliers);
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: "Supplier Deleted",
-      description: `${currentSupplier.name} has been deleted successfully.`,
-      variant: "destructive",
-    });
+    deleteSupplierMutation.mutate(currentSupplier.id);
   };
 
   const renderActions = (supplier: Supplier) => (
@@ -198,6 +275,7 @@ const Suppliers = () => {
           onEdit={handleEdit}
           onDelete={handleDelete}
           renderActions={renderActions}
+          isLoading={isLoading}
         />
 
         {/* Add Supplier Dialog */}

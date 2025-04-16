@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { EntityManager } from "@/components/EntityManager";
 import { Button } from "@/components/ui/button";
@@ -16,59 +16,180 @@ import { Label } from "@/components/ui/label";
 import { Pencil, Trash } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface Defect {
   id: number;
   product: string;
-  category: string;
+  report_date: string;
   description: string;
-  reportedBy: string;
-  reportDate: string;
+  reported_by: string;
   status: string;
   severity: string;
+  created_at?: string;
 }
 
-// Sample data
-const initialDefects: Defect[] = [
-  { id: 1, product: "Industrial Valve X200", category: "Manufacturing Defect", description: "Valve leaking at high pressure", reportedBy: "John Smith", reportDate: "2023-05-10", status: "Open", severity: "High" },
-  { id: 2, product: "Electric Motor M500", category: "Design Defect", description: "Motor overheating after 2 hours of operation", reportedBy: "Sarah Johnson", reportDate: "2023-06-15", status: "In Progress", severity: "Critical" },
-  { id: 3, product: "Control Panel CP100", category: "Electrical Fault", description: "Touchscreen unresponsive in certain areas", reportedBy: "Michael Brown", reportDate: "2023-07-20", status: "Resolved", severity: "Medium" },
-  { id: 4, product: "Hydraulic Pump HP50", category: "Performance Issue", description: "Pressure inconsistent during operation", reportedBy: "Robert Davis", reportDate: "2023-08-05", status: "Open", severity: "High" },
-  { id: 5, product: "Steel Pipe S100", category: "Material Defect", description: "Pipe showing signs of premature corrosion", reportedBy: "Jane Doe", reportDate: "2023-09-12", status: "In Progress", severity: "Medium" },
-];
-
 const Defects = () => {
-  const [defects, setDefects] = useState<Defect[]>(initialDefects);
+  const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [currentDefect, setCurrentDefect] = useState<Defect | null>(null);
   const [formData, setFormData] = useState({
     product: "",
-    category: "",
     description: "",
-    reportedBy: "",
-    reportDate: new Date().toISOString().split('T')[0],
+    reported_by: "",
+    report_date: new Date().toISOString().split('T')[0],
     status: "Open",
     severity: "Medium",
   });
 
   const columns = [
     { key: "product", label: "Product" },
-    { key: "category", label: "Category" },
-    { key: "reportedBy", label: "Reported By" },
-    { key: "reportDate", label: "Report Date" },
+    { key: "reported_by", label: "Reported By" },
+    { key: "report_date", label: "Report Date" },
     { key: "status", label: "Status" },
     { key: "severity", label: "Severity" },
   ];
 
+  // Fetch defects
+  const { data: defects = [], isLoading } = useQuery({
+    queryKey: ['defects'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('defects')
+        .select('*')
+        .order('report_date', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching defects:', error);
+        toast({
+          title: "Error fetching defects",
+          description: error.message,
+          variant: "destructive",
+        });
+        return [];
+      }
+      
+      return data as Defect[];
+    },
+  });
+
+  // Add defect mutation
+  const addDefectMutation = useMutation({
+    mutationFn: async (newDefect: Omit<Defect, 'id' | 'created_at'>) => {
+      const { data, error } = await supabase
+        .from('defects')
+        .insert(newDefect)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['defects'] });
+      setIsAddDialogOpen(false);
+      toast({
+        title: "Defect Reported",
+        description: `Defect for ${formData.product} has been reported successfully.`,
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error adding defect:', error);
+      toast({
+        title: "Error reporting defect",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update defect mutation
+  const updateDefectMutation = useMutation({
+    mutationFn: async (defect: Partial<Defect>) => {
+      const { data, error } = await supabase
+        .from('defects')
+        .update(defect)
+        .eq('id', currentDefect?.id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['defects'] });
+      setIsEditDialogOpen(false);
+      toast({
+        title: "Defect Updated",
+        description: `Defect for ${formData.product} has been updated successfully.`,
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error updating defect:', error);
+      toast({
+        title: "Error updating defect",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete defect mutation
+  const deleteDefectMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await supabase
+        .from('defects')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['defects'] });
+      setIsDeleteDialogOpen(false);
+      toast({
+        title: "Defect Deleted",
+        description: `Defect for ${currentDefect?.product} has been deleted successfully.`,
+        variant: "destructive",
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error deleting defect:', error);
+      toast({
+        title: "Error deleting defect",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Set up real-time listener
+  useEffect(() => {
+    const channel = supabase
+      .channel('defects-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'defects' }, 
+        (payload) => {
+          console.log('Real-time update:', payload);
+          queryClient.invalidateQueries({ queryKey: ['defects'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
   const handleAddNew = () => {
     setFormData({
       product: "",
-      category: "",
       description: "",
-      reportedBy: "",
-      reportDate: new Date().toISOString().split('T')[0],
+      reported_by: "",
+      report_date: new Date().toISOString().split('T')[0],
       status: "Open",
       severity: "Medium",
     });
@@ -79,10 +200,9 @@ const Defects = () => {
     setCurrentDefect(defect);
     setFormData({
       product: defect.product,
-      category: defect.category,
       description: defect.description,
-      reportedBy: defect.reportedBy,
-      reportDate: defect.reportDate,
+      reported_by: defect.reported_by,
+      report_date: defect.report_date,
       status: defect.status,
       severity: defect.severity,
     });
@@ -102,65 +222,17 @@ const Defects = () => {
   };
 
   const handleAddSubmit = () => {
-    const newDefect: Defect = {
-      id: defects.length > 0 ? Math.max(...defects.map(d => d.id)) + 1 : 1,
-      product: formData.product,
-      category: formData.category,
-      description: formData.description,
-      reportedBy: formData.reportedBy,
-      reportDate: formData.reportDate,
-      status: formData.status,
-      severity: formData.severity,
-    };
-    
-    setDefects([...defects, newDefect]);
-    setIsAddDialogOpen(false);
-    toast({
-      title: "Defect Reported",
-      description: `Defect for ${newDefect.product} has been reported successfully.`,
-    });
+    addDefectMutation.mutate(formData);
   };
 
   const handleEditSubmit = () => {
     if (!currentDefect) return;
-    
-    const updatedDefects = defects.map(def => 
-      def.id === currentDefect.id 
-        ? { 
-            ...def, 
-            product: formData.product,
-            category: formData.category,
-            description: formData.description,
-            reportedBy: formData.reportedBy,
-            reportDate: formData.reportDate,
-            status: formData.status,
-            severity: formData.severity,
-          } 
-        : def
-    );
-    
-    setDefects(updatedDefects);
-    setIsEditDialogOpen(false);
-    toast({
-      title: "Defect Updated",
-      description: `Defect for ${formData.product} has been updated successfully.`,
-    });
+    updateDefectMutation.mutate(formData);
   };
 
   const handleDeleteSubmit = () => {
     if (!currentDefect) return;
-    
-    const filteredDefects = defects.filter(
-      (def) => def.id !== currentDefect.id
-    );
-    
-    setDefects(filteredDefects);
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: "Defect Deleted",
-      description: `Defect for ${currentDefect.product} has been deleted successfully.`,
-      variant: "destructive",
-    });
+    deleteDefectMutation.mutate(currentDefect.id);
   };
 
   const renderActions = (defect: Defect) => (
@@ -194,6 +266,7 @@ const Defects = () => {
           onEdit={handleEdit}
           onDelete={handleDelete}
           renderActions={renderActions}
+          isLoading={isLoading}
         />
 
         {/* Add Defect Dialog */}
@@ -219,26 +292,6 @@ const Defects = () => {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="category" className="text-right">
-                  Category
-                </Label>
-                <select
-                  id="category"
-                  name="category"
-                  value={formData.category}
-                  onChange={handleInputChange}
-                  className="col-span-3 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">Select a category</option>
-                  <option value="Manufacturing Defect">Manufacturing Defect</option>
-                  <option value="Design Defect">Design Defect</option>
-                  <option value="Material Defect">Material Defect</option>
-                  <option value="Electrical Fault">Electrical Fault</option>
-                  <option value="Performance Issue">Performance Issue</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="description" className="text-right">
                   Description
                 </Label>
@@ -252,26 +305,26 @@ const Defects = () => {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="reportedBy" className="text-right">
+                <Label htmlFor="reported_by" className="text-right">
                   Reported By
                 </Label>
                 <Input
-                  id="reportedBy"
-                  name="reportedBy"
-                  value={formData.reportedBy}
+                  id="reported_by"
+                  name="reported_by"
+                  value={formData.reported_by}
                   onChange={handleInputChange}
                   className="col-span-3"
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="reportDate" className="text-right">
+                <Label htmlFor="report_date" className="text-right">
                   Report Date
                 </Label>
                 <Input
-                  id="reportDate"
-                  name="reportDate"
+                  id="report_date"
+                  name="report_date"
                   type="date"
-                  value={formData.reportDate}
+                  value={formData.report_date}
                   onChange={handleInputChange}
                   className="col-span-3"
                 />
@@ -343,25 +396,6 @@ const Defects = () => {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-category" className="text-right">
-                  Category
-                </Label>
-                <select
-                  id="edit-category"
-                  name="category"
-                  value={formData.category}
-                  onChange={handleInputChange}
-                  className="col-span-3 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="Manufacturing Defect">Manufacturing Defect</option>
-                  <option value="Design Defect">Design Defect</option>
-                  <option value="Material Defect">Material Defect</option>
-                  <option value="Electrical Fault">Electrical Fault</option>
-                  <option value="Performance Issue">Performance Issue</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="edit-description" className="text-right">
                   Description
                 </Label>
@@ -375,26 +409,26 @@ const Defects = () => {
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-reportedBy" className="text-right">
+                <Label htmlFor="edit-reported_by" className="text-right">
                   Reported By
                 </Label>
                 <Input
-                  id="edit-reportedBy"
-                  name="reportedBy"
-                  value={formData.reportedBy}
+                  id="edit-reported_by"
+                  name="reported_by"
+                  value={formData.reported_by}
                   onChange={handleInputChange}
                   className="col-span-3"
                 />
               </div>
               <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-reportDate" className="text-right">
+                <Label htmlFor="edit-report_date" className="text-right">
                   Report Date
                 </Label>
                 <Input
-                  id="edit-reportDate"
-                  name="reportDate"
+                  id="edit-report_date"
+                  name="report_date"
                   type="date"
-                  value={formData.reportDate}
+                  value={formData.report_date}
                   onChange={handleInputChange}
                   className="col-span-3"
                 />

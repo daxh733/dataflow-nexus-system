@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "@/components/AppLayout";
 import { EntityManager } from "@/components/EntityManager";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Pencil, Trash } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface Customer {
   id: number;
@@ -24,19 +26,12 @@ interface Customer {
   phone: string;
   address: string;
   status: string;
+  order_count: number;
+  created_at?: string;
 }
 
-// Sample data
-const initialCustomers: Customer[] = [
-  { id: 1, name: "Acme Industries", contact: "John Smith", email: "jsmith@acme.com", phone: "555-1234", address: "123 Main St, Metropolis", status: "Active" },
-  { id: 2, name: "TechWorks Inc.", contact: "Jane Doe", email: "jane@techworks.com", phone: "555-2345", address: "456 Tech Blvd, Silicon Valley", status: "Active" },
-  { id: 3, name: "Global Enterprises", contact: "Robert Brown", email: "rbrown@global.com", phone: "555-3456", address: "789 Global Ave, New York", status: "Inactive" },
-  { id: 4, name: "Superior Manufacturing", contact: "Sarah Johnson", email: "sjohnson@superior.com", phone: "555-4567", address: "321 Factory Lane, Chicago", status: "Active" },
-  { id: 5, name: "Prime Solutions LLC", contact: "Michael Chen", email: "mchen@prime.com", phone: "555-5678", address: "555 Solution Drive, Boston", status: "Active" },
-];
-
 const Customers = () => {
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
+  const queryClient = useQueryClient();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -48,6 +43,7 @@ const Customers = () => {
     phone: "",
     address: "",
     status: "Active",
+    order_count: 0
   });
 
   const columns = [
@@ -58,6 +54,137 @@ const Customers = () => {
     { key: "status", label: "Status" },
   ];
 
+  // Fetch customers
+  const { data: customers = [], isLoading } = useQuery({
+    queryKey: ['customers'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('*')
+        .order('name');
+      
+      if (error) {
+        console.error('Error fetching customers:', error);
+        toast({
+          title: "Error fetching customers",
+          description: error.message,
+          variant: "destructive",
+        });
+        return [];
+      }
+      
+      return data as Customer[];
+    },
+  });
+
+  // Add customer mutation
+  const addCustomerMutation = useMutation({
+    mutationFn: async (newCustomer: Omit<Customer, 'id' | 'created_at'>) => {
+      const { data, error } = await supabase
+        .from('customers')
+        .insert(newCustomer)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      setIsAddDialogOpen(false);
+      toast({
+        title: "Customer Added",
+        description: `${formData.name} has been added successfully.`,
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error adding customer:', error);
+      toast({
+        title: "Error adding customer",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Update customer mutation
+  const updateCustomerMutation = useMutation({
+    mutationFn: async (customer: Partial<Customer>) => {
+      const { data, error } = await supabase
+        .from('customers')
+        .update(customer)
+        .eq('id', currentCustomer?.id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      setIsEditDialogOpen(false);
+      toast({
+        title: "Customer Updated",
+        description: `${formData.name} has been updated successfully.`,
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error updating customer:', error);
+      toast({
+        title: "Error updating customer",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete customer mutation
+  const deleteCustomerMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const { error } = await supabase
+        .from('customers')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      setIsDeleteDialogOpen(false);
+      toast({
+        title: "Customer Deleted",
+        description: `${currentCustomer?.name} has been deleted successfully.`,
+        variant: "destructive",
+      });
+    },
+    onError: (error: any) => {
+      console.error('Error deleting customer:', error);
+      toast({
+        title: "Error deleting customer",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Set up real-time listener
+  useEffect(() => {
+    const channel = supabase
+      .channel('customers-changes')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'customers' }, 
+        (payload) => {
+          console.log('Real-time update:', payload);
+          queryClient.invalidateQueries({ queryKey: ['customers'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
   const handleAddNew = () => {
     setFormData({
       name: "",
@@ -66,6 +193,7 @@ const Customers = () => {
       phone: "",
       address: "",
       status: "Active",
+      order_count: 0
     });
     setIsAddDialogOpen(true);
   };
@@ -79,6 +207,7 @@ const Customers = () => {
       phone: customer.phone,
       address: customer.address,
       status: customer.status,
+      order_count: customer.order_count
     });
     setIsEditDialogOpen(true);
   };
@@ -98,63 +227,17 @@ const Customers = () => {
   };
 
   const handleAddSubmit = () => {
-    const newCustomer: Customer = {
-      id: customers.length > 0 ? Math.max(...customers.map(c => c.id)) + 1 : 1,
-      name: formData.name,
-      contact: formData.contact,
-      email: formData.email,
-      phone: formData.phone,
-      address: formData.address,
-      status: formData.status,
-    };
-    
-    setCustomers([...customers, newCustomer]);
-    setIsAddDialogOpen(false);
-    toast({
-      title: "Customer Added",
-      description: `${newCustomer.name} has been added successfully.`,
-    });
+    addCustomerMutation.mutate(formData);
   };
 
   const handleEditSubmit = () => {
     if (!currentCustomer) return;
-    
-    const updatedCustomers = customers.map(cust => 
-      cust.id === currentCustomer.id 
-        ? { 
-            ...cust, 
-            name: formData.name,
-            contact: formData.contact,
-            email: formData.email,
-            phone: formData.phone,
-            address: formData.address,
-            status: formData.status,
-          } 
-        : cust
-    );
-    
-    setCustomers(updatedCustomers);
-    setIsEditDialogOpen(false);
-    toast({
-      title: "Customer Updated",
-      description: `${formData.name} has been updated successfully.`,
-    });
+    updateCustomerMutation.mutate(formData);
   };
 
   const handleDeleteSubmit = () => {
     if (!currentCustomer) return;
-    
-    const filteredCustomers = customers.filter(
-      (cust) => cust.id !== currentCustomer.id
-    );
-    
-    setCustomers(filteredCustomers);
-    setIsDeleteDialogOpen(false);
-    toast({
-      title: "Customer Deleted",
-      description: `${currentCustomer.name} has been deleted successfully.`,
-      variant: "destructive",
-    });
+    deleteCustomerMutation.mutate(currentCustomer.id);
   };
 
   const renderActions = (customer: Customer) => (
@@ -188,6 +271,7 @@ const Customers = () => {
           onEdit={handleEdit}
           onDelete={handleDelete}
           renderActions={renderActions}
+          isLoading={isLoading}
         />
 
         {/* Add Customer Dialog */}
