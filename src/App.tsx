@@ -18,7 +18,7 @@ import MaterialMapping from "./pages/MaterialMapping";
 import Settings from "./pages/Settings";
 import Logout from "./pages/Logout";
 import { useEffect, useState } from "react";
-import { supabase } from "./lib/supabase";
+import { supabase } from "./integrations/supabase/client";
 import { toast } from "@/components/ui/use-toast";
 import { SupabaseSetupGuide } from "./components/SupabaseSetupGuide";
 
@@ -29,15 +29,6 @@ const App = () => {
   const [isSupabaseConfigured, setIsSupabaseConfigured] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Check if Supabase environment variables are configured
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    
-    if (!supabaseUrl || !supabaseAnonKey) {
-      setIsSupabaseConfigured(false);
-      return;
-    }
-
     // Check Supabase connection
     const checkConnection = async () => {
       try {

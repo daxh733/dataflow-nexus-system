@@ -9,7 +9,240 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      customers: {
+        Row: {
+          address: string
+          contact: string
+          created_at: string
+          email: string
+          id: number
+          name: string
+          order_count: number
+          phone: string
+          status: string
+        }
+        Insert: {
+          address: string
+          contact: string
+          created_at?: string
+          email: string
+          id?: number
+          name: string
+          order_count: number
+          phone: string
+          status: string
+        }
+        Update: {
+          address?: string
+          contact?: string
+          created_at?: string
+          email?: string
+          id?: number
+          name?: string
+          order_count?: number
+          phone?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      defects: {
+        Row: {
+          created_at: string
+          description: string
+          id: number
+          product: string
+          report_date: string
+          reported_by: string
+          severity: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          id?: number
+          product: string
+          report_date: string
+          reported_by: string
+          severity: string
+          status: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          id?: number
+          product?: string
+          report_date?: string
+          reported_by?: string
+          severity?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      departments: {
+        Row: {
+          created_at: string
+          employee_count: number | null
+          id: number
+          location: string
+          manager: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          employee_count?: number | null
+          id?: number
+          location: string
+          manager: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          employee_count?: number | null
+          id?: number
+          location?: string
+          manager?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      employees: {
+        Row: {
+          created_at: string
+          department: string
+          email: string
+          id: number
+          join_date: string
+          name: string
+          phone: string
+          position: string
+        }
+        Insert: {
+          created_at?: string
+          department: string
+          email: string
+          id?: number
+          join_date: string
+          name: string
+          phone: string
+          position: string
+        }
+        Update: {
+          created_at?: string
+          department?: string
+          email?: string
+          id?: number
+          join_date?: string
+          name?: string
+          phone?: string
+          position?: string
+        }
+        Relationships: []
+      }
+      products: {
+        Row: {
+          category: string
+          created_at: string
+          description: string
+          id: number
+          name: string
+          price: string
+          sku: string
+          stock: number
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          description: string
+          id?: number
+          name: string
+          price: string
+          sku: string
+          stock: number
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string
+          id?: number
+          name?: string
+          price?: string
+          sku?: string
+          stock?: number
+        }
+        Relationships: []
+      }
+      raw_materials: {
+        Row: {
+          category: string
+          code: string
+          created_at: string
+          description: string
+          id: number
+          name: string
+          stock_quantity: number
+          supplier: string
+          unit_cost: string
+        }
+        Insert: {
+          category: string
+          code: string
+          created_at?: string
+          description: string
+          id?: number
+          name: string
+          stock_quantity: number
+          supplier: string
+          unit_cost: string
+        }
+        Update: {
+          category?: string
+          code?: string
+          created_at?: string
+          description?: string
+          id?: number
+          name?: string
+          stock_quantity?: number
+          supplier?: string
+          unit_cost?: string
+        }
+        Relationships: []
+      }
+      suppliers: {
+        Row: {
+          address: string
+          contact: string
+          created_at: string
+          email: string
+          id: number
+          materials: string
+          name: string
+          phone: string
+          status: string
+        }
+        Insert: {
+          address: string
+          contact: string
+          created_at?: string
+          email: string
+          id?: number
+          materials: string
+          name: string
+          phone: string
+          status: string
+        }
+        Update: {
+          address?: string
+          contact?: string
+          created_at?: string
+          email?: string
+          id?: number
+          materials?: string
+          name?: string
+          phone?: string
+          status?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

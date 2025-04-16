@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Pencil, Trash } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/lib/supabase";
 
 type Department = Tables["departments"];
@@ -115,7 +115,7 @@ const Departments = () => {
         name: formData.name,
         location: formData.location,
         manager: formData.manager,
-        employeeCount: 0,
+        employee_count: 0,
       };
       
       const { data, error } = await supabase
