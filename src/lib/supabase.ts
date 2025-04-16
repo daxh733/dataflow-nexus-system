@@ -1,17 +1,34 @@
 
 import { createClient } from '@supabase/supabase-js'
+import { toast } from '@/components/ui/use-toast'
 
+// Get environment variables
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+// Check if environment variables are set
 if (!supabaseUrl || !supabaseAnonKey) {
   console.error('Missing Supabase environment variables')
+  
+  // Show a helpful toast message when running in browser context
+  if (typeof window !== 'undefined') {
+    setTimeout(() => {
+      toast({
+        title: "Supabase Configuration Missing",
+        description: "Please make sure you've connected to Supabase and set up your environment variables.",
+        variant: "destructive",
+        duration: 10000,
+      })
+    }, 1000)
+  }
 }
 
-export const supabase = createClient(
-  supabaseUrl || '',
-  supabaseAnonKey || ''
-)
+// Use placeholder values for development that will cause an obvious error
+// rather than just failing silently
+const fallbackUrl = supabaseUrl || 'https://example.supabase.co'
+const fallbackKey = supabaseAnonKey || 'public-anon-key-placeholder'
+
+export const supabase = createClient(fallbackUrl, fallbackKey)
 
 export type Tables = {
   departments: {
