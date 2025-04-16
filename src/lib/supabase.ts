@@ -12,7 +12,7 @@ export type Tables = {
     name: string
     location: string
     manager: string
-    employeeCount: number
+    employee_count: number
     created_at?: string
   }
   employees: {
@@ -22,7 +22,7 @@ export type Tables = {
     department: string
     email: string
     phone: string
-    joinDate: string
+    join_date: string
     created_at?: string
   }
   products: {
@@ -41,8 +41,8 @@ export type Tables = {
     code: string
     category: string
     supplier: string
-    stockQuantity: number
-    unitCost: string
+    stock_quantity: number
+    unit_cost: string
     description: string
     created_at?: string
   }
@@ -60,11 +60,11 @@ export type Tables = {
   defects: {
     id: number
     product: string
-    reportDate: string
+    report_date: string
     description: string
     severity: string
     status: string
-    reportedBy: string
+    reported_by: string
     created_at?: string
   }
   customers: {
@@ -74,7 +74,7 @@ export type Tables = {
     email: string
     phone: string
     address: string
-    orderCount: number
+    order_count: number
     status: string
     created_at?: string
   }

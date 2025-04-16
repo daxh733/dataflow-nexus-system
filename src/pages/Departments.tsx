@@ -18,7 +18,16 @@ import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/lib/supabase";
 
-type Department = Tables["departments"];
+// Define a type that matches our component's expected structure 
+// (with camelCase property names)
+type Department = {
+  id: number;
+  name: string;
+  location: string;
+  manager: string;
+  employeeCount: number;
+  created_at?: string;
+};
 
 const Departments = () => {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -54,7 +63,16 @@ const Departments = () => {
       }
 
       if (data) {
-        setDepartments(data);
+        // Convert database field names to component's expected format (employee_count → employeeCount)
+        const formattedDepartments = data.map(dept => ({
+          id: dept.id,
+          name: dept.name,
+          location: dept.location,
+          manager: dept.manager,
+          employeeCount: dept.employee_count || 0,
+          created_at: dept.created_at
+        }));
+        setDepartments(formattedDepartments);
       }
     } catch (error) {
       console.error('Error fetching departments:', error);
